@@ -1,0 +1,3 @@
+# Python dependencies for the helper scripts.
+# Blender's `bpy` and `mathutils` modules are provided by Blender itself.
+Pillow>=9.1.0

@@ -1,0 +1,9 @@
+/renders/
+/output/
+.cache/
+/dist/
+/pack/
+__pycache__/
+*.pyc
+*.blend1
+*.tiled-session

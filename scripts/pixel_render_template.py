@@ -22,21 +22,35 @@ SUN_NAME = "Pixel Render Sun"
 ORIGIN_NAME = "MODEL_ORIGIN"
 HELPER_COLLECTION_NAME = "Pixel Render Helpers"
 PIXEL_SHADER_PREFIX = "Pixel Render "
+SIDE_LIGHT_X = -1.102
+SIDE_LIGHT_Y = -8.874
+SIDE_LIGHT_Z = 21.483
+SIDE_LIGHT_ROTATION = (
+    math.radians(30.03),
+    math.radians(1.11),
+    math.radians(-4.66),
+)
 
 
 DEFAULTS = {
-    "pixel_render_auto_prepare": True,
-    "pixel_render_fixed_scale": True,
     "pixel_render_pixels_per_unit": 64.0,
     "pixel_render_tile_size": 32,
     "pixel_render_padding_pixels": 16,
-    "pixel_render_fit_square_size": 256,
     "pixel_render_elevation": 60.0,
-    "pixel_render_margin": 1.25,
+    "pixel_render_light_side": 0.0,
     "pixel_render_shader_to_rgb": True,
     "pixel_render_freestyle_outline": True,
     "pixel_render_freestyle_thickness": 1.0,
 }
+
+LEGACY_PROPERTY_NAMES = (
+    "pixel_render_auto_prepare",
+    "pixel_render_live_update",
+    "pixel_render_fixed_scale",
+    "pixel_render_fit_square_size",
+    "pixel_render_margin",
+)
+_LIVE_UPDATE_IN_PROGRESS = False
 
 
 def scene_setting(scene: bpy.types.Scene, name: str):
@@ -44,6 +58,9 @@ def scene_setting(scene: bpy.types.Scene, name: str):
 
 
 def set_default_scene_settings(scene: bpy.types.Scene) -> None:
+    for name in LEGACY_PROPERTY_NAMES:
+        if name in scene:
+            del scene[name]
     for name, value in DEFAULTS.items():
         if name not in scene:
             scene[name] = value
@@ -116,6 +133,7 @@ def mark_pixel_shader_node(node: bpy.types.Node, role: str) -> None:
 def remove_pixel_shader_wrapper(
     material: bpy.types.Material,
     output: bpy.types.Node,
+    require_wrapper: bool = False,
 ):
     nodes = material.node_tree.nodes
     links = material.node_tree.links
@@ -124,6 +142,9 @@ def remove_pixel_shader_wrapper(
         if node.get("pixel_shader_wrapper")
         or node.name.startswith(PIXEL_SHADER_PREFIX)
     ]
+    if require_wrapper and not wrapper_nodes:
+        return None
+
     shader_to_rgb = next(
         (
             node for node in wrapper_nodes
@@ -137,6 +158,8 @@ def remove_pixel_shader_wrapper(
         original_shader = shader_to_rgb.inputs["Shader"].links[0].from_socket
     elif output.inputs["Surface"].is_linked:
         original_shader = output.inputs["Surface"].links[0].from_socket
+    if original_shader is not None and original_shader.node in wrapper_nodes:
+        original_shader = None
 
     for link in list(output.inputs["Surface"].links):
         links.remove(link)
@@ -213,6 +236,21 @@ def apply_shader_to_rgb_bands(materials: Iterable[bpy.types.Material]) -> None:
         links.new(emission.outputs["Emission"], output.inputs["Surface"])
 
 
+def remove_shader_to_rgb_bands(materials: Iterable[bpy.types.Material]) -> None:
+    for material in materials:
+        if material is None or not material.use_nodes or not material.node_tree:
+            continue
+
+        output = material_output_node(material)
+        original_shader = remove_pixel_shader_wrapper(
+            material,
+            output,
+            require_wrapper=True,
+        )
+        if original_shader is not None:
+            material.node_tree.links.new(original_shader, output.inputs["Surface"])
+
+
 def helper_collection() -> bpy.types.Collection:
     collection = bpy.data.collections.get(HELPER_COLLECTION_NAME)
     if collection is None:
@@ -246,15 +284,20 @@ def ensure_camera(scene: bpy.types.Scene) -> bpy.types.Object:
     return camera
 
 
-def ensure_sun() -> bpy.types.Object:
+def ensure_sun(scene: bpy.types.Scene) -> bpy.types.Object:
     sun = bpy.data.objects.get(SUN_NAME)
     if sun is None or sun.type != "LIGHT":
-        bpy.ops.object.light_add(type="SUN", location=(0.0, 0.0, 10.0))
+        bpy.ops.object.light_add(type="SUN")
         sun = bpy.context.object
         sun.name = SUN_NAME
         sun.data.name = f"{SUN_NAME} Data"
-    sun.location = (0.0, 0.0, 10.0)
-    sun.rotation_euler = (0.0, 0.0, 0.0)
+    side_amount = clamp01(float(scene_setting(scene, "pixel_render_light_side")))
+    sun.location = (SIDE_LIGHT_X * side_amount, SIDE_LIGHT_Y, SIDE_LIGHT_Z)
+    sun.rotation_euler = (
+        SIDE_LIGHT_ROTATION[0],
+        SIDE_LIGHT_ROTATION[1],
+        SIDE_LIGHT_ROTATION[2] * side_amount,
+    )
     sun.data.type = "SUN"
     sun.data.energy = 1.0
     sun.data.color = (1.0, 1.0, 1.0)
@@ -386,11 +429,9 @@ def setup_freestyle_outline(scene: bpy.types.Scene) -> None:
         return
 
     settings = bpy.context.view_layer.freestyle_settings
-    settings.crease_angle = math.radians(60.0)
     if not settings.linesets:
         settings.linesets.new("Pixel Art Outline")
     for line_set in settings.linesets:
-        line_set.select_border = False
         line_set.linestyle.thickness = scene_setting(
             scene,
             "pixel_render_freestyle_thickness",
@@ -448,15 +489,18 @@ def prepare_template_scene(scene: bpy.types.Scene | None = None) -> tuple[int, i
     scene = scene or bpy.context.scene
     set_default_scene_settings(scene)
     ensure_origin_empty()
-    ensure_sun()
+    ensure_sun(scene)
 
     meshes = render_meshes(scene)
     if not meshes:
         configure_render(scene, 128, 128)
         raise RuntimeError("Import or unhide at least one mesh object before rendering.")
 
+    materials = materials_for_meshes(meshes)
     if scene_setting(scene, "pixel_render_shader_to_rgb"):
-        apply_shader_to_rgb_bands(materials_for_meshes(meshes))
+        apply_shader_to_rgb_bands(materials)
+    else:
+        remove_shader_to_rgb_bands(materials)
 
     bounds_min, bounds_max = world_bounds(meshes)
     center = (bounds_min + bounds_max) / 2
@@ -477,40 +521,32 @@ def prepare_template_scene(scene: bpy.types.Scene | None = None) -> tuple[int, i
     point_camera_at(camera, center)
     bpy.context.view_layer.update()
 
-    if scene_setting(scene, "pixel_render_fixed_scale"):
-        projected_min, projected_max = projected_bounds(camera, meshes)
-        projected_size = projected_max - projected_min
-        pixels_per_unit = float(scene_setting(scene, "pixel_render_pixels_per_unit"))
-        tile_size = int(scene_setting(scene, "pixel_render_tile_size"))
-        padding_pixels = int(scene_setting(scene, "pixel_render_padding_pixels"))
-        width = ceil_to_multiple(
-            projected_size.x * pixels_per_unit + padding_pixels * 2,
-            tile_size,
-        )
-        height = ceil_to_multiple(
-            projected_size.y * pixels_per_unit + padding_pixels * 2,
-            tile_size,
-        )
+    projected_min, projected_max = projected_bounds(camera, meshes)
+    projected_size = projected_max - projected_min
+    pixels_per_unit = float(scene_setting(scene, "pixel_render_pixels_per_unit"))
+    tile_size = int(scene_setting(scene, "pixel_render_tile_size"))
+    padding_pixels = int(scene_setting(scene, "pixel_render_padding_pixels"))
+    width = ceil_to_multiple(
+        projected_size.x * pixels_per_unit + padding_pixels * 2,
+        tile_size,
+    )
+    height = ceil_to_multiple(
+        projected_size.y * pixels_per_unit + padding_pixels * 2,
+        tile_size,
+    )
 
-        screen_center = (projected_min + projected_max) / 2
-        world_offset = camera.matrix_world.to_quaternion() @ Vector(
-            (screen_center.x, screen_center.y, 0.0)
-        )
-        camera.location += world_offset
-        camera.data.ortho_scale = fit_ortho_scale(
-            scene,
-            camera,
-            width,
-            height,
-            pixels_per_unit,
-        )
-    else:
-        width = int(scene_setting(scene, "pixel_render_fit_square_size"))
-        height = width
-        camera.data.ortho_scale = max_dimension * scene_setting(
-            scene,
-            "pixel_render_margin",
-        )
+    screen_center = (projected_min + projected_max) / 2
+    world_offset = camera.matrix_world.to_quaternion() @ Vector(
+        (screen_center.x, screen_center.y, 0.0)
+    )
+    camera.location += world_offset
+    camera.data.ortho_scale = fit_ortho_scale(
+        scene,
+        camera,
+        width,
+        height,
+        pixels_per_unit,
+    )
 
     configure_render(scene, width, height)
     print(
@@ -546,12 +582,11 @@ class PIXEL_RENDER_PT_template(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
         layout.operator("pixel_render.prepare", icon="RENDER_STILL")
-        layout.prop(scene, "pixel_render_auto_prepare")
-        layout.prop(scene, "pixel_render_fixed_scale")
         layout.prop(scene, "pixel_render_pixels_per_unit")
         layout.prop(scene, "pixel_render_tile_size")
         layout.prop(scene, "pixel_render_padding_pixels")
         layout.prop(scene, "pixel_render_elevation")
+        layout.prop(scene, "pixel_render_light_side")
         layout.prop(scene, "pixel_render_shader_to_rgb")
         layout.prop(scene, "pixel_render_freestyle_outline")
         layout.prop(scene, "pixel_render_freestyle_thickness")
@@ -560,12 +595,23 @@ class PIXEL_RENDER_PT_template(bpy.types.Panel):
 @persistent
 def pixel_render_auto_prepare_handler(scene: bpy.types.Scene | None = None, *_args) -> None:
     scene = scene or bpy.context.scene
-    if not scene_setting(scene, "pixel_render_auto_prepare"):
-        return
     try:
         prepare_template_scene(scene)
     except Exception as exc:
         print(f"[pixel-render-template] skipped auto-prepare: {exc}")
+
+
+def pixel_render_settings_update(scene: bpy.types.Scene, _context: bpy.types.Context) -> None:
+    global _LIVE_UPDATE_IN_PROGRESS
+    if _LIVE_UPDATE_IN_PROGRESS:
+        return
+    try:
+        _LIVE_UPDATE_IN_PROGRESS = True
+        prepare_template_scene(scene)
+    except Exception as exc:
+        print(f"[pixel-render-template] skipped live update: {exc}")
+    finally:
+        _LIVE_UPDATE_IN_PROGRESS = False
 
 
 CLASSES = (
@@ -575,67 +621,65 @@ CLASSES = (
 
 
 def register_properties() -> None:
-    bpy.types.Scene.pixel_render_auto_prepare = bpy.props.BoolProperty(
-        name="Auto Prepare Before Render",
-        default=DEFAULTS["pixel_render_auto_prepare"],
-    )
-    bpy.types.Scene.pixel_render_fixed_scale = bpy.props.BoolProperty(
-        name="Use Furniture Fixed Scale",
-        description="Render at shared px/unit scale like scripts/render_furniture_blender.py",
-        default=DEFAULTS["pixel_render_fixed_scale"],
-    )
     bpy.types.Scene.pixel_render_pixels_per_unit = bpy.props.FloatProperty(
         name="Pixels Per Unit",
         min=0.001,
         default=DEFAULTS["pixel_render_pixels_per_unit"],
+        update=pixel_render_settings_update,
     )
     bpy.types.Scene.pixel_render_tile_size = bpy.props.IntProperty(
         name="Tile Size",
         min=1,
         default=DEFAULTS["pixel_render_tile_size"],
+        update=pixel_render_settings_update,
     )
     bpy.types.Scene.pixel_render_padding_pixels = bpy.props.IntProperty(
         name="Padding Pixels",
         min=0,
         default=DEFAULTS["pixel_render_padding_pixels"],
-    )
-    bpy.types.Scene.pixel_render_fit_square_size = bpy.props.IntProperty(
-        name="Fit Square Size",
-        min=1,
-        default=DEFAULTS["pixel_render_fit_square_size"],
+        update=pixel_render_settings_update,
     )
     bpy.types.Scene.pixel_render_elevation = bpy.props.FloatProperty(
         name="Camera Elevation",
         default=DEFAULTS["pixel_render_elevation"],
+        update=pixel_render_settings_update,
     )
-    bpy.types.Scene.pixel_render_margin = bpy.props.FloatProperty(
-        name="Fit Square Margin",
-        min=0.001,
-        default=DEFAULTS["pixel_render_margin"],
+    bpy.types.Scene.pixel_render_light_side = bpy.props.FloatProperty(
+        name="Side Light Amount",
+        description="Blend lighting from centered (0) to side-biased (1)",
+        min=0.0,
+        max=1.0,
+        subtype="FACTOR",
+        default=DEFAULTS["pixel_render_light_side"],
+        update=pixel_render_settings_update,
     )
     bpy.types.Scene.pixel_render_shader_to_rgb = bpy.props.BoolProperty(
         name="Shader To RGB Bands",
         default=DEFAULTS["pixel_render_shader_to_rgb"],
+        update=pixel_render_settings_update,
     )
     bpy.types.Scene.pixel_render_freestyle_outline = bpy.props.BoolProperty(
         name="Freestyle Outline",
         default=DEFAULTS["pixel_render_freestyle_outline"],
+        update=pixel_render_settings_update,
     )
     bpy.types.Scene.pixel_render_freestyle_thickness = bpy.props.FloatProperty(
         name="Outline Thickness",
         min=0.0,
         default=DEFAULTS["pixel_render_freestyle_thickness"],
+        update=pixel_render_settings_update,
     )
 
 
 def unregister_properties() -> None:
-    for name in DEFAULTS:
+    for name in (*DEFAULTS, *LEGACY_PROPERTY_NAMES):
         if hasattr(bpy.types.Scene, name):
             delattr(bpy.types.Scene, name)
 
 
 def register() -> None:
     unregister_handler()
+    unregister_properties()
     register_properties()
     for blender_class in CLASSES:
         try:

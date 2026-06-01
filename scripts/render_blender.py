@@ -41,9 +41,10 @@ def parse_args():
                    help="Pre-rotate model around Z (degrees). Use to align "
                         "a non-standard forward axis to +X (e.g. +Y-forward "
                         "bicycle: pass -90).")
-    p.add_argument("--lighting", choices=["lpc", "overhead"], default="lpc",
-                   help="'lpc' uses the original vehicle light direction; "
-                        "'overhead' matches the interior furniture setup.")
+    p.add_argument("--lighting", choices=["center", "side"],
+                   default="center",
+                   help="'center' uses the centered vehicle light direction; "
+                        "'side' uses the original side-biased direction.")
     p.add_argument("--material-color", action="append", default=[],
                    help="Override a material's Base Color by name, format "
                         "'MatName=rrggbb'. Repeatable. Needed for assets "
@@ -287,52 +288,67 @@ def world_bounds():
     return mn, mx
 
 
-def setup_lpc_lighting():
-    # Matches LPC (Liberated Pixel Cup) perspective.blend: soft sun from
+SIDE_LIGHT_X = -1.102
+SIDE_LIGHT_Y = -8.874
+SIDE_LIGHT_Z = 21.483
+SIDE_LIGHT_ROTATION = (
+    math.radians(30.03),
+    math.radians(1.11),
+    math.radians(-4.66),
+)
+def setup_world_lighting():
+    world = bpy.context.scene.world
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs["Color"].default_value = (0.0509, 0.0509, 0.0509, 1.0)
+        bg.inputs["Strength"].default_value = 1.0
+
+
+def add_soft_sun(location: tuple[float, float, float],
+                 rotation: tuple[float, float, float]):
+    bpy.ops.object.light_add(type="SUN", location=location)
+    sun = bpy.context.object
+    sun.data.energy = 1.0
+    sun.data.color = (1.0, 1.0, 1.0)
+    sun.data.angle = math.radians(157.38)
+    if hasattr(sun.data, "shadow_soft_size"):
+        sun.data.shadow_soft_size = 5.0
+    sun.rotation_euler = rotation
+    setup_world_lighting()
+    return sun
+
+
+def side_lighting_location(side_amount: float) -> tuple[float, float, float]:
+    return (SIDE_LIGHT_X * side_amount, SIDE_LIGHT_Y, SIDE_LIGHT_Z)
+
+
+def side_lighting_rotation(side_amount: float) -> tuple[float, float, float]:
+    return (
+        SIDE_LIGHT_ROTATION[0],
+        SIDE_LIGHT_ROTATION[1],
+        SIDE_LIGHT_ROTATION[2] * side_amount,
+    )
+
+
+def setup_side_lighting():
+    # Matches the old LPC-style direction: soft sun from
     # behind-and-above the camera (camera is at -Y), very wide sun angle so
     # shadows are soft/painterly, near-black world so unlit surfaces are dark.
-    bpy.ops.object.light_add(type="SUN", location=(-1.102, -8.874, 21.483))
-    sun = bpy.context.object
-    sun.data.energy = 1.0
-    sun.data.color = (1.0, 1.0, 1.0)
-    sun.data.angle = math.radians(157.38)
-    if hasattr(sun.data, "shadow_soft_size"):
-        sun.data.shadow_soft_size = 5.0
-    sun.rotation_euler = (math.radians(30.03),
-                          math.radians(1.11),
-                          math.radians(-4.66))
-
-    world = bpy.context.scene.world
-    world.use_nodes = True
-    bg = world.node_tree.nodes.get("Background")
-    if bg:
-        bg.inputs["Color"].default_value = (0.0509, 0.0509, 0.0509, 1.0)
-        bg.inputs["Strength"].default_value = 1.0
+    add_soft_sun(side_lighting_location(1.0), side_lighting_rotation(1.0))
 
 
-def setup_overhead_lighting():
-    bpy.ops.object.light_add(type="SUN", location=(0.0, 0.0, 10.0))
-    sun = bpy.context.object
-    sun.data.energy = 1.0
-    sun.data.color = (1.0, 1.0, 1.0)
-    sun.data.angle = math.radians(157.38)
-    if hasattr(sun.data, "shadow_soft_size"):
-        sun.data.shadow_soft_size = 5.0
-    sun.rotation_euler = (0.0, 0.0, 0.0)
-
-    world = bpy.context.scene.world
-    world.use_nodes = True
-    bg = world.node_tree.nodes.get("Background")
-    if bg:
-        bg.inputs["Color"].default_value = (0.0509, 0.0509, 0.0509, 1.0)
-        bg.inputs["Strength"].default_value = 1.0
+def setup_center_lighting():
+    # Same light family as side, but centered on X so the lighting is less
+    # side-biased. The old side preset is still available with --lighting side.
+    add_soft_sun(side_lighting_location(0.0), side_lighting_rotation(0.0))
 
 
-def setup_lighting(style: str = "lpc"):
-    if style == "overhead":
-        setup_overhead_lighting()
+def setup_lighting(style: str = "center"):
+    if style == "side":
+        setup_side_lighting()
     else:
-        setup_lpc_lighting()
+        setup_center_lighting()
 
 
 def setup_color_management():

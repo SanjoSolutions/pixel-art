@@ -8,7 +8,7 @@
 
 ## Example
 
-To render a example vehicle:
+To render an example vehicle:
 
 ```bash
 scripts/render_pixel_art_asset.sh \
@@ -20,6 +20,19 @@ Outputs are written to:
 - `renders/sedan-sports/angle_*.png`
 - `output/sedan-sports/angle_*.png`
 - `output/sedan-sports_sheet.png`
+
+## Blender Template
+
+`pixel_render_template.blend` is a ready-made interactive Blender scene with
+the same camera, lighting, color-management, and outline settings used by the
+automation scripts.
+
+1. Open it
+2. Allow the embedded script if Blender asks
+3. Import a GLB/GLTF/OBJ/FBX model
+4. Render with `F12`
+
+Settings live under Render Properties > `Pixel Render Template`.
 
 ## Learn the Process
 

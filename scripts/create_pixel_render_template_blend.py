@@ -1,8 +1,7 @@
 """Create the reusable Blender render template for this project.
 
 Usage:
-  blender -b -P scripts/create_pixel_render_template_blend.py -- \
-    --out pixel_render_template.blend
+  blender -b -P scripts/create_pixel_render_template_blend.py
 """
 
 from __future__ import annotations
@@ -76,7 +75,7 @@ def configure_default_view(helper_namespace: dict) -> None:
     helper_namespace["set_default_scene_settings"](scene)
     helper_namespace["configure_render"](scene, 128, 128)
     helper_namespace["ensure_origin_empty"]()
-    helper_namespace["ensure_sun"]()
+    helper_namespace["ensure_sun"](scene)
     camera = helper_namespace["ensure_camera"](scene)
 
     elevation = math.radians(scene.pixel_render_elevation)
@@ -91,6 +90,15 @@ def configure_default_view(helper_namespace: dict) -> None:
     camera.data.ortho_scale = 2.0
     camera.data.clip_end = 100.0
     scene.render.filepath = "//pixel_render.png"
+
+
+def configure_default_freestyle_edge_types() -> None:
+    settings = bpy.context.view_layer.freestyle_settings
+    settings.crease_angle = math.radians(60.0)
+    if not settings.linesets:
+        settings.linesets.new("Pixel Art Outline")
+    for line_set in settings.linesets:
+        line_set.select_border = False
 
 
 def add_usage_notes() -> None:
@@ -112,11 +120,16 @@ the furniture regeneration path:
 - Standard color management
 - Blender filter size 0.01
 - Shader-to-RGB constant light bands
-- overhead soft sun
+- centered soft sun with adjustable side-light amount
 - 1 px black Freestyle outlines
 
-If auto-run is disabled, open the Text Editor, select pixel_render_template.py,
-click Run Script, then use the Pixel Render Template panel in Render Properties.
+Template settings live under Render Properties > Pixel Render Template. Use
+that panel to change Freestyle Outline, outline thickness, scale, padding, and
+side-light amount, and lighting-band settings. Renders always use fixed
+pixels-per-unit scaling and auto-prepare before F12, and template setting
+changes apply immediately, including camera framing and Shader To RGB Bands
+material wrapping. Freestyle Edge Type settings are initialized in this file,
+but auto-prepare and live updates do not overwrite them.
 """
     add_text_block("README_pixel_render_template", notes)
 
@@ -130,6 +143,7 @@ def main() -> None:
     helper_source, helper_namespace = load_helper_namespace()
     helper_namespace["register"]()
     configure_default_view(helper_namespace)
+    configure_default_freestyle_edge_types()
     add_text_block("pixel_render_template.py", helper_source, use_module=True)
     add_usage_notes()
 

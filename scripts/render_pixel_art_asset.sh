@@ -20,16 +20,18 @@ Options:
   --angles N                   Number of rendered angles (default: 8)
   --render-scale N             Render at N× pixel size (default: 4)
   --render-size PX             Explicit Blender render size
-  --elevation DEG              Camera elevation (default: 30)
+  --elevation DEG              Camera elevation (default: 60)
   --margin N                   Orthographic framing margin (default: 1.25)
-  --lighting lpc|overhead      Lighting profile (default: lpc)
-  --shader-to-rgb              Use flat Shader-to-RGB light bands
-  --freestyle-outline          Use Blender Freestyle outlines
+  --lighting center|side
+                               Lighting profile (default: center)
+  --shader-to-rgb [true|false]
+                               Use flat Shader-to-RGB light bands (default: true)
+  --freestyle-outline [true|false]
+                               Use Blender Freestyle outlines (default: true)
   --freestyle-thickness N      Freestyle line thickness (default: 1)
-  --post-outline               Add alpha-silhouette outline after resizing
-  --no-post-outline            Disable post-process outline
-  --quantize                   Enable color quantization (default)
-  --no-quantize                Disable color quantization
+  --post-outline [true|false]  Add alpha-silhouette outline after resizing
+                               (default: false)
+  --quantize [true|false]      Enable color quantization (default: true)
   --palette-from PATH          Use colors from a palette image
   --palette-distance MODE      pillow, rgb, or hsl (default: pillow)
   --downscale-filter FILTER    box, bilinear, lanczos, or nearest (default: lanczos)
@@ -47,6 +49,18 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "$1 is required on PATH"
 }
 
+parse_bool() {
+  case "$1" in
+    true|1|yes|on) echo 1 ;;
+    false|0|no|off) echo 0 ;;
+    *) die "$2 must be true or false" ;;
+  esac
+}
+
+has_bool_value() {
+  [ "$#" -ge 2 ] && [[ "$2" != --* ]]
+}
+
 MODEL=""
 NAME=""
 PIXEL_SIZE=64
@@ -54,13 +68,13 @@ COLORS=16
 ANGLES=8
 RENDER_SCALE=4
 RENDER_SIZE=""
-ELEVATION=30
+ELEVATION=60
 MARGIN=1.25
-LIGHTING="lpc"
-SHADER_TO_RGB=0
-FREESTYLE_OUTLINE=0
+LIGHTING="center"
+SHADER_TO_RGB=1
+FREESTYLE_OUTLINE=1
 FREESTYLE_THICKNESS=1
-POST_OUTLINE=1
+POST_OUTLINE=0
 QUANTIZE=1
 PALETTE_FROM=""
 PALETTE_DISTANCE="pillow"
@@ -110,32 +124,44 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --shader-to-rgb)
-      SHADER_TO_RGB=1
-      shift
+      if has_bool_value "$@"; then
+        SHADER_TO_RGB="$(parse_bool "$2" "$1")"
+        shift 2
+      else
+        SHADER_TO_RGB=1
+        shift
+      fi
       ;;
     --freestyle-outline)
-      FREESTYLE_OUTLINE=1
-      shift
+      if has_bool_value "$@"; then
+        FREESTYLE_OUTLINE="$(parse_bool "$2" "$1")"
+        shift 2
+      else
+        FREESTYLE_OUTLINE=1
+        shift
+      fi
       ;;
     --freestyle-thickness)
       FREESTYLE_THICKNESS="${2:?--freestyle-thickness requires a value}"
       shift 2
       ;;
     --post-outline)
-      POST_OUTLINE=1
-      shift
-      ;;
-    --no-post-outline)
-      POST_OUTLINE=0
-      shift
+      if has_bool_value "$@"; then
+        POST_OUTLINE="$(parse_bool "$2" "$1")"
+        shift 2
+      else
+        POST_OUTLINE=1
+        shift
+      fi
       ;;
     --quantize)
-      QUANTIZE=1
-      shift
-      ;;
-    --no-quantize)
-      QUANTIZE=0
-      shift
+      if has_bool_value "$@"; then
+        QUANTIZE="$(parse_bool "$2" "$1")"
+        shift 2
+      else
+        QUANTIZE=1
+        shift
+      fi
       ;;
     --palette-from)
       PALETTE_FROM="${2:?--palette-from requires a path}"
@@ -172,8 +198,8 @@ done
 [ -f "$MODEL" ] || die "model not found: $MODEL"
 
 case "$LIGHTING" in
-  lpc|overhead) ;;
-  *) die "--lighting must be lpc or overhead" ;;
+  center|side) ;;
+  *) die "--lighting must be center or side" ;;
 esac
 
 case "$PALETTE_DISTANCE" in

@@ -46,18 +46,15 @@ the underlying Python scripts.
 Examples:
 
 ```bash
-# Geometry-aware Blender outline instead of post-process alpha outline.
+# Thicker geometry-aware Blender outline.
 scripts/render_pixel_art_asset.sh \
   --model "models/kenney_car_kit/Models/GLB format/taxi.glb" \
-  --freestyle-outline \
-  --freestyle-thickness 4 \
-  --no-post-outline
+  --freestyle-thickness 4
 
-# Flatter lighting bands.
+# Side-biased lighting bands. Omit --lighting to use center by default.
 scripts/render_pixel_art_asset.sh \
   --model "models/kenney_car_kit/Models/GLB format/taxi.glb" \
-  --lighting overhead \
-  --shader-to-rgb
+  --lighting side
 
 # Use any palette image you provide.
 scripts/render_pixel_art_asset.sh \

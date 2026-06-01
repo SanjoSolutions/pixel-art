@@ -31,7 +31,7 @@ Options:
   --freestyle-thickness N      Freestyle line thickness (default: 1)
   --post-outline [true|false]  Add alpha-silhouette outline after resizing
                                (default: false)
-  --quantize [true|false]      Enable color quantization (default: true)
+  --quantize [true|false]      Enable color quantization (default: false)
   --palette-from PATH          Use colors from a palette image
   --palette-distance MODE      pillow, rgb, or hsl (default: pillow)
   --downscale-filter FILTER    box, bilinear, lanczos, or nearest (default: lanczos)
@@ -75,7 +75,7 @@ SHADER_TO_RGB=1
 FREESTYLE_OUTLINE=1
 FREESTYLE_THICKNESS=1
 POST_OUTLINE=0
-QUANTIZE=1
+QUANTIZE=0
 PALETTE_FROM=""
 PALETTE_DISTANCE="pillow"
 DOWNSCALE_FILTER="lanczos"

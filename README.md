@@ -1,5 +1,7 @@
 # 3D to 2D Pixel Art Pipeline
 
+![3D model to 2D pixel art style demo](demo.png)
+
 ## Requirements
 
 - Blender (tested with 5.1)
@@ -44,7 +46,8 @@ Settings live under Render Properties > `Pixel Render Template`.
 - `scripts/render_pixel_art_asset.sh` orchestrates the single-model workflow.
 - `scripts/render_blender.py` imports a model and renders angle frames in
   Blender.
-- `scripts/pixelize.py` resizes, quantizes, outlines, trims, and previews PNGs.
+- `scripts/pixelize.py` resizes, optionally color quantizes, outlines, trims, and
+  previews PNGs.
 - `scripts/make_spritesheet.py` composes frames into a sprite sheet.
 
 Additional utility scripts support palette conversion, grid sheets, Aseprite

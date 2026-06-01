@@ -1,4 +1,4 @@
-# 3D to 2D Pixel Art Pipeline
+# 3D to 2D Pixel Art Style Pipeline
 
 ![3D model to 2D pixel art style demo](demo.png)
 
